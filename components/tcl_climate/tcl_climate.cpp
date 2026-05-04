@@ -99,9 +99,9 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.power = get_cmd_resp->data.power;
     m_set_cmd.data.off_timer_en = 0;
     m_set_cmd.data.on_timer_en = 0;
-    m_set_cmd.data.beep = 1;
-    m_set_cmd.data.disp = 1;
-    m_set_cmd.data.eco = 0;
+    m_set_cmd.data.beep = beep_enabled ? 1 : 0;
+    m_set_cmd.data.disp = display_state ? 1 : 0;
+    m_set_cmd.data.eco = eco_state ? 1 : 0;
     m_set_cmd.data.turbo = get_cmd_resp->data.turbo;
     m_set_cmd.data.mute = get_cmd_resp->data.mute;
 
@@ -219,6 +219,38 @@ void TCLClimate::control_horizontal_swing(const std::string &swing_mode) {
 
   build_set_cmd(&get_cmd_resp);
   ready_to_send_set_cmd_flag = true;
+}
+
+void TCLClimate::control_display(bool state) {
+  if (display_state == state) return;
+  display_state = state;
+  ESP_LOGI("TCL", "Display set to: %s", state ? "ON" : "OFF");
+
+  // Build a command from the current AC state (build_set_cmd will pick up the new display_state)
+  get_cmd_resp_t get_cmd_resp = {0};
+  memcpy(get_cmd_resp.raw, m_get_cmd_resp.raw, sizeof(get_cmd_resp.raw));
+  build_set_cmd(&get_cmd_resp);
+  ready_to_send_set_cmd_flag = true;
+}
+
+void TCLClimate::control_eco(bool state) {
+  if (eco_state == state) return;
+  eco_state = state;
+  ESP_LOGI("TCL", "Eco set to: %s", state ? "ON" : "OFF");
+
+  get_cmd_resp_t get_cmd_resp = {0};
+  memcpy(get_cmd_resp.raw, m_get_cmd_resp.raw, sizeof(get_cmd_resp.raw));
+  build_set_cmd(&get_cmd_resp);
+  ready_to_send_set_cmd_flag = true;
+}
+
+void TCLClimate::control_beep(bool state) {
+  // Beep is per-command (the AC chirps when it receives a command).
+  // The AC does not report a beep state, so we just store the user's preference
+  // and apply it to all subsequent set commands. No need to send anything now.
+  if (beep_enabled == state) return;
+  beep_enabled = state;
+  ESP_LOGI("TCL", "Beep on commands: %s", state ? "ENABLED" : "DISABLED");
 }
 
 void TCLClimate::control(const climate::ClimateCall &call) {
@@ -411,6 +443,12 @@ void TCLClimate::loop() {
                 // Calculate current temperature
                 float curr_temp = ((static_cast<uint16_t>(buffer[17] << 8) | buffer[18]) / 374.0f - 32.0f) / 1.8f;
                 this->is_changed = false;
+
+                // Sync feature state from AC report (so remote-control changes are reflected
+                // and we don't accidentally overwrite them on the next set command).
+                // Beep has no field in the get response, so we leave beep_enabled untouched.
+                display_state = (m_get_cmd_resp.data.disp != 0);
+                eco_state = (m_get_cmd_resp.data.eco != 0);
 
                 // Set mode
                 if (m_get_cmd_resp.data.power == 0x00) {
