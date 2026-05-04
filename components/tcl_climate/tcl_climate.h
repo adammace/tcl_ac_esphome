@@ -18,6 +18,11 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
   std::string hswing_pos = "";
   std::string vswing_pos = "";
 
+  // Feature state - synced with AC reports for disp/eco; locally stored for beep
+  bool display_state = true;
+  bool eco_state = false;
+  bool beep_enabled = false;
+
   union get_cmd_resp_t {
     struct {
       uint8_t header;
@@ -207,6 +212,16 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
   // Swing control methods
   void control_vertical_swing(const std::string &swing_mode);
   void control_horizontal_swing(const std::string &swing_mode);
+
+  // Feature control methods
+  void control_display(bool state);
+  void control_eco(bool state);
+  void control_beep(bool state);
+
+  // Feature state getters (for template switches in YAML)
+  bool get_display_state() const { return display_state; }
+  bool get_eco_state() const { return eco_state; }
+  bool get_beep_enabled() const { return beep_enabled; }
 
   void build_set_cmd(get_cmd_resp_t *get_cmd_resp);
 
